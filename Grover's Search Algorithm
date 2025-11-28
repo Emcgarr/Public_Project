@@ -1,187 +1,155 @@
-#initialization
+# ============================================
+# Grover's Algorithm Demonstration on Qiskit
+# ============================================
+
+import math
+import numpy as np
 import matplotlib.pyplot as plt
-import numpy as np
-import math
 
-# importing Qiskit
-from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister
-
-# import basic plot tools
-from qiskit.visualization import plot_histogram
-
-import numpy as np
+# --- Qiskit imports ---
 from qiskit import QuantumCircuit, transpile
-from qiskit_aer import Aer
-from qiskit_aer.noise import NoiseModel, errors
-
-from qiskit_ibm_runtime import SamplerV2 as Sampler, QiskitRuntimeService
-
-# Built-in modules
-import math
-
-# Imports from Qiskit
-from qiskit import QuantumCircuit
 from qiskit.circuit.library import GroverOperator, MCMT, ZGate
-from qiskit.visualization import plot_distribution
+from qiskit.visualization import plot_histogram, plot_distribution
+from qiskit_aer import Aer
+from qiskit_aer.noise import NoiseModel
 
-# Imports from Qiskit Runtime
+# Qiskit Runtime
 from qiskit_ibm_runtime import QiskitRuntimeService
 from qiskit_ibm_runtime import SamplerV2 as Sampler
 
+# Fake backend for noise simulation
+from qiskit_ibm_runtime.fake_provider import FakeKyiv
+
+
+# ============================================
+# Grover Oracle for multiple marked states
+# ============================================
+
 def grover_oracle(marked_states):
-    """Build a Grover oracle for multiple marked states
+    """
+    Build a Grover oracle circuit for single or multiple marked bitstrings.
 
-    Here we assume all input marked states have the same number of bits
-
-    Parameters:
-        marked_states (str or list): Marked states of oracle
+    Args:
+        marked_states (str or list): marked bitstrings (e.g., "000" or ["000","111"])
 
     Returns:
-        QuantumCircuit: Quantum circuit representing Grover oracle
+        QuantumCircuit: Oracle circuit
     """
-    if not isinstance(marked_states, list):
+    if isinstance(marked_states, str):
         marked_states = [marked_states]
-    # Compute the number of qubits in circuit
-    num_qubits = len(marked_states[0])
 
+    num_qubits = len(marked_states[0])
     qc = QuantumCircuit(num_qubits)
-    # Mark each target state in the input list
+
     for target in marked_states:
-        # Flip target bit-string to match Qiskit bit-ordering
-        rev_target = target[::-1]
-        # Find the indices of all the '0' elements in bit-string
-        zero_inds = [ind for ind in range(num_qubits) if rev_target.startswith("0", ind)]
-        # Add a multi-controlled Z-gate with pre- and post-applied X-gates (open-controls)
-        # where the target bit-string has a '0' entry
+        rev = target[::-1]
+
+        # Indices where the state requires a |0> control → implement as open controls using X
+        zero_inds = [i for i, bit in enumerate(rev) if bit == "0"]
+
         qc.x(zero_inds)
         qc.compose(MCMT(ZGate(), num_qubits - 1, 1), inplace=True)
         qc.x(zero_inds)
+
     return qc
 
-marked_states = ["000", "100"]
 
+# Example marked states
+marked_states = ["000", "100"]
 oracle = grover_oracle(marked_states)
 oracle.draw(output="mpl", style="iqp")
 
-from qiskit import QuantumCircuit
-from qiskit.circuit.library import MCMT, XGate
 
+# ============================================
+# Demonstration of MCMT Gate Decomposition
+# ============================================
 
-
-# Example: 2 controls, 2 targets
 num_controls = 3
 num_targets = 1
 total_qubits = num_controls + num_targets
 
-# Create a QuantumCircuit
 qc = QuantumCircuit(total_qubits, name='MCMT_example')
-
-# Build an MCMT gate using X as the single-qubit base gate
 mcmt_gate = MCMT(ZGate(), total_qubits - 1, 1)
-
-# Append the MCMT gate to the circuit
-# Controls = qubits [0, 1], Targets = qubits [2, 3]
 qc.append(mcmt_gate, range(total_qubits))
 
 print("Original circuit with MCMT gate:")
 print(qc.draw())
 
-# Decompose the MCMT gate into fundamental gates
-decomposed_qc = qc.decompose()
-print("\nCircuit after decomposing the MCMT gate:")
-print(decomposed_qc.draw())
-
-from qiskit import QuantumCircuit, transpile
-from qiskit.circuit.library import MCMT, ZGate
-
-# Suppose you have 1 control qubit and 2 target qubits for a controlled Z
-num_controls = 1
-num_targets = 2
-total_qubits = num_controls + num_targets
-
-# Build a circuit with an MCMT-Z gate
-qc = QuantumCircuit(total_qubits, name='MCMT_Z')
-mcmt_z_gate = MCMT(ZGate(), 2, 1)
-qc.append(mcmt_z_gate, range(total_qubits))
-
-print("Original circuit with MCMT Z gate:")
-print(qc.draw())
-
-# Decompose the MCMT gate once (to Qiskit’s default sub-blocks)
-decomposed_once = qc.decompose()
-print("\nCircuit after one-level decomposition:")
-print(decomposed_once.draw())
-
-# Force a full decomposition into a chosen basis (e.g., u3, cx)
-fully_decomposed = transpile(qc, basis_gates=['u3', 'cx'])
-print("\nCircuit fully decomposed into u3 and cx:")
+print("\nDecomposed:")
+print(qc.decompose().draw())
 
 
-print(fully_decomposed.draw(fold=-1))
+# ============================================
+# Build Grover's Operator
+# ============================================
 
 grover_op = GroverOperator(oracle)
 grover_op.decompose().draw(output="mpl", style="iqp")
 
 
-#Define initialize
+# ============================================
+# Grover Initialization
+# ============================================
+
 def initialize_s(qc, qubits):
-    """Apply a H-gate to 'qubits' in qc""" 
+    """Apply Hadamards to all qubits."""
     for q in qubits:
-        qc.h(q) 
+        qc.h(q)
     return qc
-    
-n =3
 
+
+n = 3
 grover_circuit = QuantumCircuit(n, n)
-grover_circuit = initialize_s(grover_circuit, [0,1,2])
-for _ in range(1):  # Two iterations
-    grover_circuit.append(grover_op, [0,1,2])
-grover_circuit.measure([0,1,2], [0,1,2])
+initialize_s(grover_circuit, range(n))
 
+# Number of Grover iterations (example: 1)
+for _ in range(1):
+    grover_circuit.append(grover_op, range(n))
+
+grover_circuit.measure(range(n), range(n))
 display(grover_circuit.draw("mpl"))
 plt.show()
 
+
+# ============================================
+# Optimal number of iterations
+# ============================================
+
 optimal_num_iterations = math.floor(
-    math.pi / (4 * math.asin(math.sqrt(len(marked_states) / 2**grover_op.num_qubits)))
+    math.pi / (4 * math.asin(math.sqrt(len(marked_states) / 2**n)))
 )
+print("Optimal number of Grover iterations:", optimal_num_iterations)
 
-print(optimal_num_iterations)
 
-from qiskit import transpile
-from qiskit_aer import Aer
-from qiskit_aer.noise import NoiseModel
-from qiskit.visualization import plot_histogram
-# Load a real noise model from an IBM Quantum device
-from qiskit_ibm_runtime.fake_provider import FakeKyiv # Example: Fake IBM Kyiv device backend = FakeKyiv()
-backend=FakeKyiv()
+# ============================================
+# Noisy Simulation using FakeKyiv backend
+# ============================================
+
+backend = FakeKyiv()
 noise_model = NoiseModel.from_backend(backend)
-# Define noisy simulator
-noisy_sim = Aer.get_backend("aer_simulator") 
+
+noisy_sim = Aer.get_backend("aer_simulator")
 noisy_sim = noisy_sim.from_backend(backend)
-# Transpile the circuit for the noisy simulator
-transpiled_grover_circuit = transpile(grover_circuit, noisy_sim)
-# Run the noisy simulation
-results_noisy = noisy_sim.run(transpiled_grover_circuit).result() 
+
+transpiled_noisy = transpile(grover_circuit, noisy_sim)
+results_noisy = noisy_sim.run(transpiled_noisy).result()
 counts_noisy = results_noisy.get_counts()
-# Plot results
-plot_histogram(counts_noisy, title="Grover's Algorithm with Noise")
 
-# Load IBM Q account and get the least busy backend devic
-service = QiskitRuntimeService(channel = "ibm_quantum", #ibm_cloud
-                               token= '9e2768b144715257198e866a0efefbcff132975755971628de42dbed37861ae70d37128ab6ed6473f60f64ef7d27364d8d419025d55b81b614b530ef7148f7b8' )
+plot_histogram(counts_noisy, title="Grover's Algorithm under Noise")
 
-# Load IBMQ account (Make sure you have set up an account with IBM Quantum)
 
-backend = service.backend("ibm_kyiv")
-sampler = Sampler(mode=backend)
+# ============================================
+# Running on Real IBM Quantum Hardware
+# ============================================
 
-print("Current backend is", backend)
+# IMPORTANT: Replace with your own token, but DO NOT commit it to GitHub.
+# service = QiskitRuntimeService(channel="ibm_quantum", token="YOUR_API_TOKEN_HERE")
 
-transpiled_circuit = transpile(grover_circuit, backend,  optimization_level=3)
+# Uncomment once you set your token locally:
+# backend = service.backend("ibm_kyiv")
+# sampler = Sampler(mode=backend)
+# transpiled_circuit = transpile(grover_circuit, backend, optimization_level=3)
+# job = sampler.run([transpiled_circuit])
+# counts = job.result()[0].data.c.get_counts()
+# plot_histogram(counts)
 
-# Run on the real quantum device
-job = sampler.run([transpiled_circuit])
-
-result = job.result()[0]
-counts = job.result()[0].data.c.get_counts()
-plot_histogram(counts)
